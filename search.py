@@ -27,9 +27,10 @@ torch.backends.cudnn.benchmark = True
 
 
 class GrowCtrler(object):
-    def __init__(self, grow_step1, grow_step2):
+    def __init__(self, grow_step1, grow_step2, grow_step3):
         self.grow_step1 = grow_step1
         self.grow_step2 = grow_step2
+        self.grow_step3 = grow_step3
 
     def cur_stage(self, search_iter):
         """
@@ -41,8 +42,10 @@ class GrowCtrler(object):
             return 0
         elif self.grow_step1 <= search_iter < self.grow_step2:
             return 1
-        else:
+        elif self.grow_step2 <= search_iter < self.grow_step3:
             return 2
+        else:
+            return 3
 
 
 def create_ctrler(args, cur_stage, weights_init):
@@ -93,7 +96,7 @@ def main():
     gen_net, dis_net, gen_optimizer, dis_optimizer = create_shared_gan(args, weights_init)
 
     # set grow controller
-    grow_ctrler = GrowCtrler(args.grow_step1, args.grow_step2)
+    grow_ctrler = GrowCtrler(args.grow_step1, args.grow_step2, args.grow_step3)
 
     # initial
     start_search_iter = 0
@@ -150,7 +153,7 @@ def main():
     # train loop
     for search_iter in tqdm(range(int(start_search_iter), int(args.max_search_iter)), desc='search progress'):
         logger.info(f"<start search iteration {search_iter}>")
-        if search_iter == args.grow_step1 or search_iter == args.grow_step2:
+        if search_iter in [args.grow_step1, args.grow_step2, args.grow_step3]:
 
             # save
             cur_stage = grow_ctrler.cur_stage(search_iter)

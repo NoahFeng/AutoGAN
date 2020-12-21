@@ -170,6 +170,8 @@ def parse_args():
                         help='which iteration to grow the image size from 8 to 16')
     parser.add_argument('--grow_step2', type=int, default=55,
                         help='which iteration to grow the image size from 16 to 32')
+    parser.add_argument('--grow_step3', type=int, default=80,
+                        help='which iteration to grow the image size from 32 to 64')
     parser.add_argument('--max_search_iter', type=int, default=90,
                         help='max search iterations of this algorithm')
     parser.add_argument('--ctrl_step', type=int, default=30,

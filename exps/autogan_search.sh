@@ -1,8 +1,9 @@
 #!/usr/bin/env bash
 
 python search.py \
--gen_bs 128 \
--dis_bs 64 \
+-gen_bs 32 \
+-dis_bs 32 \
+--eval_batch_size 50 \
 --dataset cifar10 \
 --bottom_width 4 \
 --img_size 32 \
@@ -27,6 +28,7 @@ python search.py \
 --shared_epoch 15 \
 --grow_step1 15 \
 --grow_step2 35 \
---max_search_iter 65 \
+--grow_step3 55 \
+--max_search_iter 75 \
 --ctrl_step 30 \
 --exp_name autogan_search

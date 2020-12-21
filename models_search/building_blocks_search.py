@@ -28,6 +28,7 @@ class PreGenBlock(nn.Module):
         self.deconv = nn.ConvTranspose2d(
             in_channels, in_channels, kernel_size=2, stride=2)
         self.conv = nn.Conv2d(in_channels, out_channels, ksize, padding=ksize//2)
+        self.activation = nn.ReLU(inplace=False)
 
     def set_arch(self, up_id, norm_id):
         self.up_type = UP_TYPE[up_id]
@@ -46,7 +47,7 @@ class PreGenBlock(nn.Module):
             h = x
 
         # activation
-        h = nn.ReLU()(h)
+        h = self.activation(h)
 
         # whether this is a upsample block
         if self.up_block:
@@ -69,6 +70,7 @@ class PostGenBlock(nn.Module):
         self.bn = nn.BatchNorm2d(out_channels)
         self.inn = nn.InstanceNorm2d(out_channels)
         self.up_block = up_block
+        self.activation = nn.ReLU(inplace=False)
 
     def set_arch(self, up_id, norm_id):
         self.up_type = UP_TYPE[up_id]
@@ -97,7 +99,7 @@ class PostGenBlock(nn.Module):
                 raise NotImplementedError(self.norm_type)
 
         # activation
-        out = nn.ReLU()(h)
+        out = self.activation(h)
 
         return out
 
@@ -122,12 +124,20 @@ class Cell(nn.Module):
             nn.ConvTranspose2d(in_channels, out_channels, kernel_size=2, stride=2),
             nn.ConvTranspose2d(out_channels, out_channels, kernel_size=2, stride=2)
         )
+        self.skip_deconvx8 = nn.Sequential(
+            nn.ConvTranspose2d(in_channels, out_channels, kernel_size=2, stride=2),
+            nn.ConvTranspose2d(out_channels, out_channels, kernel_size=2, stride=2),
+            nn.ConvTranspose2d(out_channels, out_channels, kernel_size=2, stride=2)
+        )
 
         self.num_skip_in = num_skip_in
         if num_skip_in:
             self.skip_in_ops = nn.ModuleList([nn.Conv2d(in_channels, out_channels, kernel_size=1) for _ in range(num_skip_in)])
 
     def set_arch(self, conv_id, norm_id, up_id, short_cut_id, skip_ins):
+        """skip_ins, 表示len(SKIP_TYPE)**cur_stage种跳连方案中的哪一个，
+        后续用decimal2binary()函数转换成二进制，二进制的每一位表示前面每个cell是否有到当前cell的跳连
+        """
         self.post_conv1.set_arch(up_id, norm_id)
         self.pre_conv1.set_arch(up_id, norm_id)
         self.post_conv2.set_arch(up_id, norm_id)
@@ -180,119 +190,3 @@ class Cell(nn.Module):
                 final_out += self.c_sc(self.deconv_sc(x))
 
         return h_skip_out, final_out
-
-
-def _downsample(x):
-    # Downsample (Mean Avg Pooling with 2x2 kernel)
-    return nn.AvgPool2d(kernel_size=2)(x)
-
-
-class OptimizedDisBlock(nn.Module):
-    def __init__(
-            self,
-            args,
-            in_channels,
-            out_channels,
-            ksize=3,
-            pad=1,
-            activation=nn.ReLU()):
-        super(OptimizedDisBlock, self).__init__()
-        self.activation = activation
-
-        self.c1 = nn.Conv2d(
-            in_channels,
-            out_channels,
-            kernel_size=ksize,
-            padding=pad)
-        self.c2 = nn.Conv2d(
-            out_channels,
-            out_channels,
-            kernel_size=ksize,
-            padding=pad)
-        self.c_sc = nn.Conv2d(
-            in_channels,
-            out_channels,
-            kernel_size=1,
-            padding=0)
-        if args.d_spectral_norm:
-            self.c1 = nn.utils.spectral_norm(self.c1)
-            self.c2 = nn.utils.spectral_norm(self.c2)
-            self.c_sc = nn.utils.spectral_norm(self.c_sc)
-
-    def residual(self, x):
-        h = x
-        h = self.c1(h)
-        h = self.activation(h)
-        h = self.c2(h)
-        h = _downsample(h)
-        return h
-
-    def shortcut(self, x):
-        return self.c_sc(_downsample(x))
-
-    def forward(self, x):
-        return self.residual(x) + self.shortcut(x)
-
-
-class DisBlock(nn.Module):
-    def __init__(
-            self,
-            args,
-            in_channels,
-            out_channels,
-            hidden_channels=None,
-            ksize=3,
-            pad=1,
-            activation=nn.ReLU(),
-            downsample=False):
-        super(DisBlock, self).__init__()
-        self.activation = activation
-        self.downsample = downsample
-        self.learnable_sc = (in_channels != out_channels) or downsample
-        hidden_channels = in_channels if hidden_channels is None else hidden_channels
-
-        self.c1 = nn.Conv2d(
-            in_channels,
-            hidden_channels,
-            kernel_size=ksize,
-            padding=pad)
-        self.c2 = nn.Conv2d(
-            hidden_channels,
-            out_channels,
-            kernel_size=ksize,
-            padding=pad)
-        if args.d_spectral_norm:
-            self.c1 = nn.utils.spectral_norm(self.c1)
-            self.c2 = nn.utils.spectral_norm(self.c2)
-
-        if self.learnable_sc:
-            self.c_sc = nn.Conv2d(
-                in_channels,
-                out_channels,
-                kernel_size=1,
-                padding=0)
-            if args.d_spectral_norm:
-                self.c_sc = nn.utils.spectral_norm(self.c_sc)
-
-    def residual(self, x):
-        h = x
-        h = self.activation(h)
-        h = self.c1(h)
-        h = self.activation(h)
-        h = self.c2(h)
-        if self.downsample:
-            h = _downsample(h)
-        return h
-
-    def shortcut(self, x):
-        if self.learnable_sc:
-            x = self.c_sc(x)
-            if self.downsample:
-                return _downsample(x)
-            else:
-                return x
-        else:
-            return x
-
-    def forward(self, x):
-        return self.residual(x) + self.shortcut(x)

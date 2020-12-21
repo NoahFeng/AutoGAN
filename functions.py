@@ -218,6 +218,7 @@ def train_controller(args, controller, ctrl_optimizer, gen_net, prev_hiddens, pr
         adv = cur_batch_rewards - baseline
 
         # policy loss
+        # adv是REINFORCE中的G_t - baseline。下式加负号是将maximum问题转化为minimum
         loss = -selected_log_probs * adv
         loss = loss.sum()
 
